@@ -7,7 +7,7 @@ import {
   onAuthStateChanged,
   signOut,
 } from "firebase/auth"
-import { doc, getDoc, setDoc } from "firebase/firestore"
+import { doc, getDoc, setDoc, getDocFromCache } from "firebase/firestore"
 import { trackLogout } from "@/lib/analytics"
 
 export interface UserProfile {
@@ -53,30 +53,102 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser)
 
-        // Firestore'dan kullanıcı profilini al
+        // Firestore'dan kullanıcı profilini al (offline toleranslı)
         try {
           const userDocRef = doc(db, "users", firebaseUser.uid)
-          const userDoc = await getDoc(userDocRef)
 
-          if (userDoc.exists()) {
-            const userData = userDoc.data() as UserProfile
-            setUserProfile(userData)
-          } else {
-            // İlk kez giriş yapan kullanıcı, yeni profil oluştur
-            const newProfile: UserProfile = {
-              uid: firebaseUser.uid,
-              email: firebaseUser.email,
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              role: "user", // Varsayılan olarak user
-              createdAt: new Date(),
-              updatedAt: new Date(),
+          // Eğer tarayıcıdayız ve çevrimdışıysak, önce önbellekten dene
+          if (typeof window !== "undefined" && !navigator.onLine) {
+            try {
+              const cachedDoc = await getDocFromCache(userDocRef)
+              if (cachedDoc && cachedDoc.exists()) {
+                const userData = cachedDoc.data() as UserProfile
+                setUserProfile(userData)
+                console.info("Kullanıcı profili önbellekten yüklendi:", firebaseUser.uid)
+              } else {
+                // Önbellekte yoksa lokal fallback oluştur (yazmayı ertele)
+                const now = new Date()
+                const localProfile: UserProfile = {
+                  uid: firebaseUser.uid,
+                  email: firebaseUser.email,
+                  displayName: firebaseUser.displayName,
+                  photoURL: firebaseUser.photoURL,
+                  role: "user",
+                  createdAt: now,
+                  updatedAt: now,
+                }
+                setUserProfile(localProfile)
+                console.warn(
+                  "Çevrimdışı: önbellekte kullanıcı dökümanı yok. Yerel profil kullanılıyor; ağ geri geldiğinde Firestore'a yazılacak.",
+                  firebaseUser.uid
+                )
+
+                if (typeof window !== "undefined") {
+                  const handleOnline = async () => {
+                    try {
+                      await setDoc(userDocRef, localProfile)
+                      console.info(
+                        "Çevrimdışı oluşturulan yerel profil Firestore'a yazıldı:",
+                        firebaseUser.uid
+                      )
+                    } catch (writeErr) {
+                      console.error(
+                        "Yerel profil Firestore'a yazılamadı (çevrimdışı sonrası):",
+                        writeErr
+                      )
+                    }
+                  }
+                  window.addEventListener("online", handleOnline, { once: true })
+                }
+              }
+            } catch (cacheErr) {
+              // getDocFromCache hata atabilir (ör. önbellek yok)
+              console.warn("Önbellekten okuma başarısız, lokal profil oluşturuluyor:", cacheErr)
+              const now = new Date()
+              const localProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                role: "user",
+                createdAt: now,
+                updatedAt: now,
+              }
+              setUserProfile(localProfile)
+              if (typeof window !== "undefined") {
+                const handleOnline = async () => {
+                  try {
+                    await setDoc(userDocRef, localProfile)
+                    console.info("Lokal profil çevrimdışı sonrası Firestore'a yazıldı:", firebaseUser.uid)
+                  } catch (writeErr) {
+                    console.error("Çevrimdışı sonrası yazma hatası:", writeErr)
+                  }
+                }
+                window.addEventListener("online", handleOnline, { once: true })
+              }
             }
-            await setDoc(doc(db, "users", firebaseUser.uid), newProfile)
-            setUserProfile(newProfile)
+          } else {
+            // Online veya server-side: normal akış
+            const userDoc = await getDoc(userDocRef)
+            if (userDoc.exists()) {
+              const userData = userDoc.data() as UserProfile
+              setUserProfile(userData)
+            } else {
+              const newProfile: UserProfile = {
+                uid: firebaseUser.uid,
+                email: firebaseUser.email,
+                displayName: firebaseUser.displayName,
+                photoURL: firebaseUser.photoURL,
+                role: "user",
+                createdAt: new Date(),
+                updatedAt: new Date(),
+              }
+              await setDoc(userDocRef, newProfile)
+              setUserProfile(newProfile)
+            }
           }
         } catch (error) {
-          console.error("Profil yükleme hatası:", error)
+          console.error("Kullanıcı profil işlemi sırasında hata oluştu:", error)
         }
       } else {
         setUser(null)

@@ -8,9 +8,10 @@ import type { User } from "@/app/page"
 interface UserDashboardProps {
   user: User
   onLogout: () => void
+  onBack?: () => void
 }
 
-export function UserDashboard({ user, onLogout }: UserDashboardProps) {
+export function UserDashboard({ user, onLogout, onBack }: UserDashboardProps) {
   const firstName = user.email.split("@")[0]
 
   return (
@@ -27,10 +28,17 @@ export function UserDashboard({ user, onLogout }: UserDashboardProps) {
               <p className="text-xs text-muted-foreground">{user.email}</p>
             </div>
           </div>
-          <Button variant="ghost" size="sm" onClick={onLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
+          <div className="flex items-center gap-2">
+            {onBack && (
+              <Button variant="ghost" size="sm" onClick={onBack}>
+                Geri
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={onLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Logout
+            </Button>
+          </div>
         </div>
       </header>
 

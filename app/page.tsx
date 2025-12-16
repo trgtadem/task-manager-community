@@ -53,7 +53,13 @@ export default function TaskManagementApp() {
   }, [user, userProfile, authLoading])
 
   const handleGoToLogin = () => {
-    setCurrentView("login")
+    // Eğer zaten giriş yapılmışsa doğrudan uygun dashboard'a yönlendir
+    if (user) {
+      if (userProfile?.role === "admin") setCurrentView("admin")
+      else setCurrentView("user")
+    } else {
+      setCurrentView("login")
+    }
   }
 
   const handleLogout = async () => {
@@ -91,7 +97,14 @@ export default function TaskManagementApp() {
   return (
     <main className="min-h-screen bg-background">
       {currentView === "landing" && <LandingPage onLoginClick={handleGoToLogin} onSignUpClick={handleGoToLogin} />}
-      {currentView === "login" && <FirebaseLogin onLoginSuccess={() => {}} />}
+      {currentView === "login" && (
+        <FirebaseLogin
+          onLoginSuccess={() => {
+            // Giriş başarılıysa view'ı user olarak ayarla (auth listener da yardımı olacak)
+            setCurrentView("user")
+          }}
+        />
+      )}
       {currentView === "admin" && (
         <AdminDashboard
           users={users}
@@ -100,7 +113,13 @@ export default function TaskManagementApp() {
           onLogout={handleLogout}
         />
       )}
-      {currentView === "user" && currentUser && <UserDashboard user={currentUser} onLogout={handleLogout} />}
+      {currentView === "user" && currentUser && (
+        <UserDashboard
+          user={currentUser}
+          onLogout={handleLogout}
+          onBack={() => setCurrentView("landing")}
+        />
+      )}
     </main>
   )
 }
