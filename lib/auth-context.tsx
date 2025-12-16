@@ -53,6 +53,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (firebaseUser) {
         setUser(firebaseUser)
 
+        // Custom claims'den admin rolünü kontrol et (getIdTokenResult)
+        try {
+          const idTokenResult = await firebaseUser.getIdTokenResult(true) // Force refresh
+          const isAdmin = idTokenResult.claims.admin === true
+          if (isAdmin) {
+            console.info("Admin custom claim tespit edildi:", firebaseUser.uid)
+          }
+        } catch (claimsError) {
+          console.warn("Custom claims okuma hatası:", claimsError)
+        }
+
         // Firestore'dan kullanıcı profilini al (offline toleranslı)
         try {
           const userDocRef = doc(db, "users", firebaseUser.uid)
@@ -132,14 +143,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const userDoc = await getDoc(userDocRef)
             if (userDoc.exists()) {
               const userData = userDoc.data() as UserProfile
+              // Custom claims'den admin yetkisini kontrol et
+              const idTokenResult = await firebaseUser.getIdTokenResult()
+              const isAdminClaim = idTokenResult.claims.admin === true
+              // Custom claim varsa Firestore'daki role'ü override et
+              if (isAdminClaim && userData.role !== "admin") {
+                userData.role = "admin"
+              }
               setUserProfile(userData)
             } else {
+              // Yeni kullanıcı, custom claims'i kontrol et
+              const idTokenResult = await firebaseUser.getIdTokenResult()
+              const isAdminClaim = idTokenResult.claims.admin === true
               const newProfile: UserProfile = {
                 uid: firebaseUser.uid,
                 email: firebaseUser.email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role: "user",
+                role: isAdminClaim ? "admin" : "user", // Custom claim'den role belirle
                 createdAt: new Date(),
                 updatedAt: new Date(),
               }
